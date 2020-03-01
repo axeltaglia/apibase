@@ -1,0 +1,109 @@
+# TEMPLATE
+
+image: docker
+
+services:
+  - docker:dind
+
+variables:
+    DOCKER_DRIVER: overlay
+
+stages:
+  - build
+  - development
+  - staging
+  - cleandev
+  - cleanstg
+
+build_image:
+  stage: build
+  script:
+    - docker login -u gitlab-ci-token -p ${CI_JOB_TOKEN} ${CI_REGISTRY}
+    - docker build -t ${CI_REGISTRY}/${CI_PROJECT_NAMESPACE}/${CI_PROJECT_NAME}/image:${CI_COMMIT_REF_SLUG} .
+    - docker push ${CI_REGISTRY}/${CI_PROJECT_NAMESPACE}/${CI_PROJECT_NAME}/image:${CI_COMMIT_REF_SLUG}
+  tags:
+    - deploy
+    - development
+  only:
+    - development
+    - staging
+
+clean_dev:
+  stage: cleandev
+  script:
+    - dump-env --template=.env.template --prefix='DEVELOPMENT_' > .env
+    - docker-compose exec -u www-data -T php php bin/console database:reload
+  tags:
+    - deploy
+    - development
+  only:
+    - development
+  when: manual
+
+clean_stg:
+  stage: cleanstg
+  script:
+    - dump-env --template=.env.template --prefix='STAGING_' > .env
+    - docker-compose exec -u www-data -T php php bin/console database:reload
+  tags:
+    - deploy
+    - development
+  only:
+    - staging
+  when: manual
+
+deploy_development:
+  stage: development
+  script:
+    - docker login -u gitlab-ci-token -p ${CI_BUILD_TOKEN} ${CI_REGISTRY}
+    - docker stop ${CI_PROJECT_NAMESPACE}_${CI_PROJECT_NAME}_${CI_COMMIT_REF_SLUG} || true
+    - docker rm ${CI_PROJECT_NAMESPACE}_${CI_PROJECT_NAME}_${CI_COMMIT_REF_SLUG} || true
+    - docker rmi ${CI_REGISTRY}/${CI_PROJECT_NAMESPACE}/${CI_PROJECT_NAME}/image:${CI_COMMIT_REF_SLUG} || true
+    - dump-env --template=.env.template --prefix='DEVELOPMENT_' > .env
+    - docker-compose up -d nginx php
+    - docker-compose exec -u www-data -T php sh -c "dump-env --template=.env.template > .env"
+    - docker-compose exec -u www-data -T php php bin/console cache:clear
+    - docker-compose exec -u www-data -T php sh -c "yes | php bin/console doctrine:migrations:migrate"
+    - docker-compose exec -T php rm -rf /code/var/cache/*
+    - docker-compose exec -T php php /code/bin/console assets:install
+    - docker-compose exec -T php php /code/bin/console doctrine:fixtures:load --append
+    - docker-compose exec -T php rm -rf /var/www/symfony/src/*
+    - docker-compose exec -T php cp -rp /code/. /var/www/symfony/
+    - docker-compose exec -T php rm -rf /var/www/symfony/var/cache/*
+  tags:
+    - deploy
+    - development
+  environment:
+    name: ${CI_JOB_STAGE}
+    url: https://${CI_COMMIT_REF_SLUG}.${CI_PROJECT_NAME}.${CI_JOB_STAGE}.magnetico.com.ar
+  only:
+    - development
+  when: on_success
+
+deploy_staging:
+  stage: staging
+  script:
+    - docker login -u gitlab-ci-token -p ${CI_BUILD_TOKEN} ${CI_REGISTRY}
+    - docker stop ${CI_PROJECT_NAMESPACE}_${CI_PROJECT_NAME}_${CI_COMMIT_REF_SLUG} || true
+    - docker rm ${CI_PROJECT_NAMESPACE}_${CI_PROJECT_NAME}_${CI_COMMIT_REF_SLUG} || true
+    - docker rmi ${CI_REGISTRY}/${CI_PROJECT_NAMESPACE}/${CI_PROJECT_NAME}/image:${CI_COMMIT_REF_SLUG} || true
+    - dump-env --template=.env.template --prefix='STAGING_' > .env
+    - docker-compose up -d nginx php
+    - docker-compose exec -u www-data -T php sh -c "dump-env --template=.env.template > .env"
+    - docker-compose exec -u www-data -T php php bin/console cache:clear
+    - docker-compose exec -u www-data -T php sh -c "yes | php bin/console doctrine:migrations:migrate"
+    - docker-compose exec -T php rm -rf /code/var/cache/*
+    - docker-compose exec -T php php /code/bin/console assets:install
+    - docker-compose exec -T php php /code/bin/console doctrine:fixtures:load --append
+    - docker-compose exec -T php rm -rf /var/www/symfony/src/*
+    - docker-compose exec -T php cp -rp /code/. /var/www/symfony/
+    - docker-compose exec -T php rm -rf /var/www/symfony/var/cache/*
+  tags:
+    - deploy
+    - staging
+  environment:
+    name: ${CI_JOB_STAGE}
+    url: https://${CI_COMMIT_REF_SLUG}.${CI_PROJECT_NAME}.${CI_JOB_STAGE}.magnetico.com.ar
+  only:
+    - staging
+  when: manual

@@ -1,0 +1,40 @@
+version: '3.7'
+services:
+    php:
+        env_file:
+           - .env
+        labels:
+            - "traefik.enable=false"
+        image: ${CI_REGISTRY}/${CI_PROJECT_NAMESPACE}/${CI_PROJECT_NAME}/image:${CI_COMMIT_REF_SLUG}
+        container_name: "${CI_PROJECT_NAMESPACE}_${CI_PROJECT_NAME}_${CI_COMMIT_REF_SLUG}"
+        volumes:
+            - /docker/${CI_PROJECT_NAMESPACE}/${CI_PROJECT_NAME}/${CI_COMMIT_REF_SLUG}/app:/var/www/symfony
+            - /docker/${CI_PROJECT_NAMESPACE}/${CI_PROJECT_NAME}/${CI_COMMIT_REF_SLUG}/logs/symfony:/var/www/symfony/var/log
+        networks:
+            - web
+
+    nginx:
+        env_file:
+           - .env
+        build:
+           context: ./docker/nginx
+           args:
+              upstream_container: "${CI_PROJECT_NAMESPACE}_${CI_PROJECT_NAME}_${CI_COMMIT_REF_SLUG}"
+        container_name: "${CI_PROJECT_NAMESPACE}_${CI_PROJECT_NAME}_${CI_COMMIT_REF_SLUG}_nginx"
+        labels:
+            - "traefik.backend=${CI_COMMIT_REF_SLUG}-${CI_PROJECT_NAME}"
+            - "traefik.frontend.rule=Host:${CI_COMMIT_REF_SLUG}.${CI_PROJECT_NAME}.${CI_JOB_STAGE}.magnetico.com.ar"
+            - "traefik.docker.network=web"
+            - "traefik.enable=true"
+            - "traefik.frontend.headers.SSLForceHost=true"
+        networks:
+            - web
+        links:
+            - php
+        volumes:
+            - /docker/${CI_PROJECT_NAMESPACE}/${CI_PROJECT_NAME}/${CI_COMMIT_REF_SLUG}/app:/var/www/symfony
+            - /docker/${CI_PROJECT_NAMESPACE}/${CI_PROJECT_NAME}/${CI_COMMIT_REF_SLUG}/logs/nginx:/var/log/nginx
+
+networks:
+  web:
+    external: true
