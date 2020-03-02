@@ -39,7 +39,7 @@ security:
         api:
             pattern:   ^/api
             stateless: true
-            anonymous: false
+            anonymous: true
             provider: api_user_provider
             guard:
                 authenticators:

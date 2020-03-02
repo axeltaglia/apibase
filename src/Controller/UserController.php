@@ -28,7 +28,7 @@ class UserController extends AbstractFOSRestController
      *
      * @SWG\Response(
      *     response=200,
-     *     description="Roles information succeSeasonService.phpssfully given"
+     *     description="Roles information successfully given"
      * )
      *
      * @SWG\Response(
